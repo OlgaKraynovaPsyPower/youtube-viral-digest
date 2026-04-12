@@ -1,4 +1,4 @@
-name: 🔥 YouTube Viral Digest
+name: YouTube Viral Digest
 
 on:
   schedule:
@@ -7,13 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       lookback_days:
-        description: "How many days back to search (default: 30)"
+        description: "Days back to search (default: 30)"
         required: false
         default: "30"
       min_views:
-        description: "Minimum views threshold (default: 300000)"
+        description: "Minimum views (default: 10000)"
         required: false
-        default: "300000"
+        default: "10000"
+      min_ratio:
+        description: "Minimum ratio views/subs (default: 1.5)"
+        required: false
+        default: "1.5"
 
 jobs:
   send-digest:
@@ -38,5 +42,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
           LOOKBACK_DAYS:      ${{ github.event.inputs.lookback_days || '30' }}
-          MIN_VIEWS:          ${{ github.event.inputs.min_views || '300000' }}
+          MIN_VIEWS:          ${{ github.event.inputs.min_views || '10000' }}
+          MIN_RATIO:          ${{ github.event.inputs.min_ratio || '1.5' }}
         run: python digest.py

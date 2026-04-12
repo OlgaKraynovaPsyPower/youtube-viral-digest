@@ -7,17 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       lookback_days:
-        description: "Days back to search (default: 30)"
+        description: "Days back to search (default: 90)"
         required: false
-        default: "30"
+        default: "90"
       min_views:
-        description: "Minimum views (default: 10000)"
+        description: "Minimum views (default: 15000)"
         required: false
-        default: "10000"
+        default: "15000"
       min_ratio:
-        description: "Minimum ratio views/subs (default: 1.5)"
+        description: "Minimum ratio views/subs (default: 2)"
         required: false
-        default: "1.5"
+        default: "2"
 
 jobs:
   send-digest:
@@ -41,7 +41,7 @@ jobs:
           YOUTUBE_API_KEY:    ${{ secrets.YOUTUBE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-          LOOKBACK_DAYS:      ${{ github.event.inputs.lookback_days || '30' }}
-          MIN_VIEWS:          ${{ github.event.inputs.min_views || '10000' }}
-          MIN_RATIO:          ${{ github.event.inputs.min_ratio || '1.5' }}
+          LOOKBACK_DAYS:      ${{ github.event.inputs.lookback_days || '90' }}
+          MIN_VIEWS:          ${{ github.event.inputs.min_views || '15000' }}
+          MIN_RATIO:          ${{ github.event.inputs.min_ratio || '2' }}
         run: python digest.py

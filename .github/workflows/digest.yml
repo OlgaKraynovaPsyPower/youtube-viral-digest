@@ -23,6 +23,8 @@ jobs:
   send-digest:
     name: Fetch & Send Digest
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -41,6 +43,8 @@ jobs:
           YOUTUBE_API_KEY:    ${{ secrets.YOUTUBE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO:        ${{ github.repository }}
           LOOKBACK_DAYS:      ${{ github.event.inputs.lookback_days || '90' }}
           MIN_VIEWS:          ${{ github.event.inputs.min_views || '15000' }}
           MIN_RATIO:          ${{ github.event.inputs.min_ratio || '2' }}

@@ -1,34 +1,85 @@
 """
 YouTube Viral Digest Bot
-Finds videos where views/subs ratio >= 3 (viral signal)
-and sends a daily digest to Telegram.
+Finds videos where views/subs ratio >= MIN_RATIO
+Skips videos already seen in previous runs (stored in seen_videos.txt)
 """
 
 import os
 import re
 import requests
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 
 YOUTUBE_API_KEY    = os.environ["YOUTUBE_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"]
+GITHUB_TOKEN       = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO        = os.environ.get("GITHUB_REPO", "")
 
-LOOKBACK_DAYS    = int(os.getenv("LOOKBACK_DAYS", "30"))
-MIN_VIEWS        = int(os.getenv("MIN_VIEWS", "10000"))
-MIN_RATIO        = float(os.getenv("MIN_RATIO", "1.5"))
+LOOKBACK_DAYS    = int(os.getenv("LOOKBACK_DAYS", "90"))
+MIN_VIEWS        = int(os.getenv("MIN_VIEWS", "15000"))
+MIN_RATIO        = float(os.getenv("MIN_RATIO", "2"))
 MIN_DURATION_SEC = 180
 
 RESULTS_PER_KEYWORD = 50
+SEEN_FILE = "seen_videos.txt"
+
+
+def load_seen():
+    path = Path(SEEN_FILE)
+    if not path.exists():
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return set(line.strip() for line in f if line.strip())
+
+
+def save_seen(seen_ids):
+    with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        for vid_id in sorted(seen_ids):
+            f.write(vid_id + "\n")
+
+
+def push_seen_to_github(seen_ids):
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        print("[WARN] GITHUB_TOKEN or GITHUB_REPO not set, skipping seen file push")
+        return
+
+    content_str = "\n".join(sorted(seen_ids)) + "\n"
+    import base64
+
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{SEEN_FILE}"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    get_resp = requests.get(api_url, headers=headers)
+    sha = None
+    if get_resp.status_code == 200:
+        sha = get_resp.json().get("sha")
+
+    content_b64 = base64.b64encode(content_str.encode()).decode()
+    payload = {
+        "message": "Update seen_videos.txt",
+        "content": content_b64,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    put_resp = requests.put(api_url, headers=headers, json=payload)
+    if put_resp.status_code in (200, 201):
+        print(f"[OK] seen_videos.txt updated on GitHub ({len(seen_ids)} entries)")
+    else:
+        print(f"[ERROR] Failed to push seen_videos.txt: {put_resp.status_code} {put_resp.text[:200]}")
 
 
 def load_keywords():
-    path = os.path.join(os.path.dirname(__file__), "keywords.txt")
-    if not os.path.exists(path):
+    path = Path("keywords.txt")
+    if not path.exists():
         return []
     with open(path, encoding="utf-8") as f:
-        lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-    return lines
+        return [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
 
 def search_videos(keyword, published_after):
@@ -148,6 +199,9 @@ def main():
         send_telegram("keywords.txt is empty or missing.")
         return
 
+    seen = load_seen()
+    print(f"Loaded {len(seen)} seen video IDs")
+
     published_after = (
         datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -161,12 +215,12 @@ def main():
         items = search_videos(kw, published_after)
         for item in items:
             vid = item["id"].get("videoId")
-            if vid and vid not in candidates:
+            if vid and vid not in candidates and vid not in seen:
                 candidates[vid] = kw
         print(f"  [{kw}] -> {len(items)} results")
 
     if not candidates:
-        send_telegram("Viral Digest: No videos found today.")
+        send_telegram("Viral Digest: No new videos found today.")
         return
 
     all_video_ids = list(candidates.keys())
@@ -207,6 +261,7 @@ def main():
         if ratio < MIN_RATIO:
             continue
         results.append({
+            "id":          vid_id,
             "title":       vid_data["snippet"]["title"],
             "channel":     vid_data["snippet"]["channelTitle"],
             "subscribers": subs,
@@ -219,7 +274,7 @@ def main():
         })
 
     if not results:
-        send_telegram(f"Viral Digest: No videos matched ratio >= {MIN_RATIO}x today.")
+        send_telegram(f"Viral Digest: No new videos matched ratio >= {MIN_RATIO}x today.")
         return
 
     results.sort(key=lambda x: x["ratio"], reverse=True)
@@ -228,7 +283,7 @@ def main():
     header = (
         f"<b>Viral Digest - {date_str}</b>\n"
         f"Ratio >= {MIN_RATIO}x | min {fmt_number(MIN_VIEWS)} views | no Shorts\n\n"
-        f"Found <b>{len(results)}</b> videos:\n\n"
+        f"Found <b>{len(results)}</b> new videos:\n\n"
     )
 
     body = ""
@@ -245,7 +300,12 @@ def main():
         )
 
     send_in_chunks(header + body)
-    print(f"Done. Sent {len(results)} videos to Telegram.")
+
+    new_seen = seen | {v["id"] for v in results}
+    save_seen(new_seen)
+    push_seen_to_github(new_seen)
+
+    print(f"Done. Sent {len(results)} videos. Total seen: {len(new_seen)}")
 
 
 if __name__ == "__main__":
